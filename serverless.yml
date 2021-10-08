@@ -1,0 +1,46 @@
+service: lever-monitor
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  region: us-east-1
+  environment:
+    DYNAMODB_TABLE: lever-target
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+      Resource:
+        - !Sub "arn:aws:dynamodb:${self:provider.region}:${AWS::AccountId}:table/${self:provider.environment.DYNAMODB_TABLE}"
+    - Effect: Allow
+      Action:
+        - ses:SendEmail
+      Resource:
+        - !Sub "arn:aws:ses:${self:provider.region}:${AWS::AccountId}:identity/${file(./config.json):sesIdentityTo}"
+        - !Sub "arn:aws:ses:${self:provider.region}:${AWS::AccountId}:identity/${file(./config.json):sesIdentityFrom}"
+
+functions:
+  checkTarget:
+    handler: handler.main
+    events:
+      - schedule: cron(0 12 ? * MON-FRI *) # M-F at 12pm UTC
+    environment:
+      LEVER_RUNTIME: remote
+      LEVER_TARGETS: ${file(./config.json):targets}
+      EMAIL_TO: ${file(./config.json):emailTo}
+      EMAIL_FROM: ${file(./config.json):emailFrom}
+
+resources:
+  Resources:
+    LeverTargetTable:
+      Type: "AWS::DynamoDB::Table"
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: target
+            AttributeType: S
+        KeySchema:
+          - AttributeName: target
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+        TableName: ${self:provider.environment.DYNAMODB_TABLE}
